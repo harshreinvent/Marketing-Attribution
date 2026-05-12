@@ -1,0 +1,32 @@
+{
+  "name": "@repo/worker",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@repo/config": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/types": "workspace:*",
+    "@repo/utils": "workspace:*",
+    "@repo/validators": "workspace:*",
+    "bullmq": "^5.0.0",
+    "node-cron": "^3.0.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "google-ads-api": "^16.0.0",
+    "@google-analytics/data": "^4.0.0",
+    "googleapis": "^140.0.0",
+    "node-fetch": "^3.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.0"
+  }
+}

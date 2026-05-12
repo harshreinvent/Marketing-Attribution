@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// Using enums instead of plain strings prevents invalid values from entering
+// the database silently. "googleads" vs "GOOGLE_ADS" vs "Google Ads" are all
+// blocked — only the exact enum value is accepted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  AGENCY_ADMIN
+  CLIENT_ADMIN
+  LOCATION_MANAGER
+  VIEWER
+}
+
+enum IntegrationPlatform {
+  GOOGLE_ADS
+  META_ADS
+  GA4
+  GMB
+  CRM
+}
+
+enum MappingType {
+  SOURCE
+  CAMPAIGN
+  LOCATION
+  PIPELINE_STAGE
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANT MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Client {
+  id                      String    @id @default(cuid())
+  name                    String
+  slug                    String    @unique
+
+  // Sync state — written by worker after each run
+  is_data_initialized     Boolean   @default(false)
+  initial_sync_days       Int       @default(30)
+  last_successful_sync_at DateTime?
+  crm_last_sync_at        DateTime?
+  sync_failure_count      Int       @default(0)
+  is_sync_paused          Boolean   @default(false)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  locations            Location[]
+  users                User[]
+  user_location_access UserLocationAccess[]
+  integrations         Integration[]
+  mappings             Mapping[]
+  google_ads_daily     GoogleAdsDaily[]
+  meta_ads_daily       MetaAdsDaily[]
+  ga4_organic_daily    Ga4OrganicDaily[]
+  gmb_daily            GmbDaily[]
+  crm_opportunities    CrmOpportunity[]
+  normalisation_audits NormalisationAudit[]
+  sync_runs            SyncRun[]
+
+  @@map("clients")
+}
+
+model Location {
+  id              String  @id @default(cuid())
+  client_id       String
+  name            String
+  slug            String
+  // GHL sub-account or branch identifier used to map CRM records to locations.
+  // One CRM account per client — this field links each location to its
+  // matching pipeline or tag inside that single CRM account.
+  crm_location_id String?
+
+  created_at DateTime @default(now())
+
+  // Relations
+  client               Client               @relation(fields: [client_id], references: [id])
+  user_location_access UserLocationAccess[]
+  google_ads_daily     GoogleAdsDaily[]
+  meta_ads_daily       MetaAdsDaily[]
+  ga4_organic_daily    Ga4OrganicDaily[]
+  gmb_daily            GmbDaily[]
+  crm_opportunities    CrmOpportunity[]
+
+  @@unique([client_id, slug])
+  @@index([client_id])
+  @@map("locations")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  // client_id is null for AGENCY_ADMIN — they belong to no specific client
+  client_id   String?
+  supabase_id String   @unique
+  email       String   @unique
+  role        UserRole
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  client               Client?              @relation(fields: [client_id], references: [id])
+  user_location_access UserLocationAccess[]
+
+  @@index([client_id])
+  @@map("users")
+}
+
+// Replaces User.location_ids String[] — a proper junction table that:
+// · is indexable
+// · enforces FK constraints on both sides
+// · allows future metadata (e.g. assigned_at, assigned_by)
+model UserLocationAccess {
+  id          String   @id @default(cuid())
+  user_id     String
+  client_id   String
+  location_id String
+  created_at  DateTime @default(now())
+
+  user     User     @relation(fields: [user_id], references: [id])
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  @@unique([user_id, location_id])
+  @@index([user_id])
+  @@index([client_id])
+  @@map("user_location_access")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One row per platform per client.
+// credentials is stored as Json — contents vary per platform:
+//   GOOGLE_ADS: { customer_id, refresh_token, developer_token }
+//   META_ADS:   { ad_account_id, access_token }
+//   GA4:        { property_id, service_account_key }
+//   GMB:        { location_ids: string[], service_account_key }
+//   CRM:        { api_key, location_id, base_url }
+// token_expiry is set for platforms with expiring tokens (Google, Meta).
+// The worker checks this field before syncing and alerts 7 days before expiry.
+model Integration {
+  id           String              @id @default(cuid())
+  client_id    String
+  platform     IntegrationPlatform
+  credentials  Json
+  token_expiry DateTime?
+  created_at   DateTime            @default(now())
+  updated_at   DateTime            @updatedAt
+
+  client Client @relation(fields: [client_id], references: [id])
+
+  @@unique([client_id, platform])
+  @@index([client_id])
+  @@map("integrations")
+}
+
+// Per-client normalisation rules.
+// Examples:
+//   type=SOURCE,         rule_key="facebook",      rule_value="META_ADS"
+//   type=SOURCE,         rule_key="fb",            rule_value="META_ADS"
+//   type=CAMPAIGN,       rule_key="implant may",   rule_value="Implant Campaign"
+//   type=LOCATION,       rule_key="kondapur",      rule_value="loc_abc123"
+//   type=PIPELINE_STAGE, rule_key="stage_id_xyz",  rule_value="Appointment Confirmed"
+model Mapping {
+  id         String      @id @default(cuid())
+  client_id  String
+  type       MappingType
+  rule_key   String
+  rule_value String
+  created_at DateTime    @default(now())
+
+  client Client @relation(fields: [client_id], references: [id])
+
+  @@unique([client_id, type, rule_key])
+  @@index([client_id, type])
+  @@map("mappings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY AGGREGATE MODELS
+// date is stored as PostgreSQL DATE (@db.Date) — no time component.
+// This makes @@unique constraints on date reliable for upserts.
+//
+// All money fields use Decimal @db.Decimal(14, 2) — never Float.
+// Float is binary floating point and cannot represent 999.99 exactly.
+// Decimal stores exact values, which matters for CPL, ROAS, ROI calculations.
+//
+// @@unique includes location_id so the same campaign running across two
+// locations on the same date produces two distinct rows, not one overwriting
+// the other.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GoogleAdsDaily {
+  id            String   @id @default(cuid())
+  client_id     String
+  location_id   String
+  campaign_id   String
+  campaign_name String
+  date          DateTime @db.Date
+
+  impressions Int     @default(0)
+  clicks      Int     @default(0)
+  cost        Decimal @default(0) @db.Decimal(14, 2)
+  conversions Decimal @default(0) @db.Decimal(10, 2)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  // location_id included so same campaign in two locations on same date
+  // produces two distinct rows rather than one overwriting the other.
+  @@unique([client_id, location_id, campaign_id, date])
+  @@index([client_id, date])
+  @@index([client_id, location_id, date])
+  @@map("google_ads_daily")
+}
+
+model MetaAdsDaily {
+  id            String   @id @default(cuid())
+  client_id     String
+  location_id   String
+  campaign_id   String
+  campaign_name String
+  date          DateTime @db.Date
+
+  impressions Int     @default(0)
+  clicks      Int     @default(0)
+  spend       Decimal @default(0) @db.Decimal(14, 2)
+  leads       Int     @default(0)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  @@unique([client_id, location_id, campaign_id, date])
+  @@index([client_id, date])
+  @@index([client_id, location_id, date])
+  @@map("meta_ads_daily")
+}
+
+model Ga4OrganicDaily {
+  id          String   @id @default(cuid())
+  client_id   String
+  location_id String
+  date        DateTime @db.Date
+
+  // Empty string instead of NULL so @@unique works correctly in PostgreSQL.
+  // NULL != NULL in SQL, which breaks unique constraint matching on upsert.
+  channel      String @default("")
+  landing_page String @default("")
+
+  sessions    Int   @default(0)
+  users       Int   @default(0)
+  page_views  Int   @default(0)
+  bounce_rate Float?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  @@unique([client_id, location_id, date, channel, landing_page])
+  @@index([client_id, date])
+  @@index([client_id, location_id, date])
+  @@map("ga4_organic_daily")
+}
+
+model GmbDaily {
+  id          String   @id @default(cuid())
+  client_id   String
+  location_id String
+  date        DateTime @db.Date
+
+  views              Int @default(0)
+  searches           Int @default(0)
+  calls              Int @default(0)
+  direction_requests Int @default(0)
+  website_clicks     Int @default(0)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  // @@unique already creates a covering index on (client_id, location_id, date).
+  // @@index([client_id, date]) is still needed for cross-location aggregates
+  // that filter by client_id + date without knowing location_id upfront.
+  @@unique([client_id, location_id, date])
+  @@index([client_id, date])
+  @@map("gmb_daily")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRM MODEL
+// One CRM account per client. The worker fetches all opportunities from that
+// single CRM account and maps them to the correct Location using crm_location_id
+// on the Location model and LOCATION mapping rules in the Mapping table.
+//
+// Timestamp naming convention:
+//   crm_created_at / crm_updated_at = timestamps from GHL (external source)
+//   created_at / updated_at on other models = DB-generated timestamps
+// This distinction prevents confusion when debugging sync issues.
+//
+// monetary_value uses Decimal for exact arithmetic in ROAS/ROI calculations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CrmOpportunity {
+  id                 String  @id @default(cuid())
+  client_id          String
+  location_id        String
+  crm_opportunity_id String
+
+  pipeline_id         String?
+  pipeline_stage_id   String?
+  pipeline_stage_name String?
+  status              String?
+  monetary_value      Decimal? @db.Decimal(14, 2)
+  contact_id          String?
+  source              String?
+  medium              String?
+  campaign            String?
+  appointment_status  String?
+
+  // These are timestamps from GHL — not DB-generated.
+  // Named crm_* to distinguish from DB-generated created_at on other models.
+  crm_created_at DateTime
+  crm_updated_at DateTime
+
+  // DB-generated — when this row was written/updated in our database
+  synced_at  DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  client   Client   @relation(fields: [client_id], references: [id])
+  location Location @relation(fields: [location_id], references: [id])
+
+  @@unique([client_id, crm_opportunity_id])
+  @@index([client_id, crm_created_at])
+  @@index([client_id, location_id, crm_created_at])
+  @@map("crm_opportunities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYNC MONITORING MODELS
+// These tables replace console.log debugging for cron failures.
+// Every worker run creates one SyncRun row and one SyncStepRun per step.
+// The admin panel queries these to show: which client failed, which step,
+// how many rows were processed, and the exact error message.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SyncRun {
+  id          String     @id @default(cuid())
+  client_id   String
+  status      SyncStatus
+  started_at  DateTime   @default(now())
+  finished_at DateTime?
+  // Date range that was synced — useful for debugging first-run vs daily
+  date_from   DateTime?  @db.Date
+  date_to     DateTime?  @db.Date
+  error       String?
+
+  client Client        @relation(fields: [client_id], references: [id])
+  steps  SyncStepRun[]
+
+  @@index([client_id, started_at])
+  @@map("sync_runs")
+}
+
+model SyncStepRun {
+  id             String     @id @default(cuid())
+  sync_run_id    String
+  step_name      String
+  status         SyncStatus
+  rows_processed Int        @default(0)
+  error          String?
+  started_at     DateTime   @default(now())
+  finished_at    DateTime?
+
+  syncRun SyncRun @relation(fields: [sync_run_id], references: [id])
+
+  @@index([sync_run_id])
+  @@map("sync_step_runs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT MODEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Logs every normalisation transformation — original vs normalised value.
+// Used by the admin mappings panel to review and correct mapping rules.
+// Example row: { table: "crm_opportunities", original: "fb", normalised: "META_ADS" }
+model NormalisationAudit {
+  id         String   @id @default(cuid())
+  client_id  String
+  table_name String
+  original   String
+  normalised String
+  created_at DateTime @default(now())
+
+  client Client @relation(fields: [client_id], references: [id])
+
+  @@index([client_id, table_name])
+  @@map("normalisation_audit")
+}

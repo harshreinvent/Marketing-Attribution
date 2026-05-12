@@ -1,0 +1,15 @@
+export const ROUTES = {
+  LOGIN: "/login",
+  EXECUTIVE_SUMMARY: "/dashboard/executive-summary",
+  GOOGLE_ADS: "/dashboard/google-ads",
+  META_ADS: "/dashboard/meta-ads",
+  WEBSITE_ORGANIC: "/dashboard/website-organic",
+  FUNNEL_ROI: "/dashboard/funnel-roi",
+  GMB: "/dashboard/gmb",
+  ADMIN_CLIENTS: "/admin/clients",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_LOCATIONS: "/admin/locations",
+  ADMIN_INTEGRATIONS: "/admin/integrations",
+  ADMIN_MAPPINGS: "/admin/mappings",
+  ADMIN_SYNC_STATUS: "/admin/sync-status",
+} as const;
