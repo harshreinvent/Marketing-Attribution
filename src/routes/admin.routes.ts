@@ -4,7 +4,6 @@ import { agencyAdminMiddleware } from "../middleware/agencyAdmin.middleware";
 import { rateLimitMiddleware } from "../middleware/rateLimit.middleware";
 import { clientsController } from "../controllers/admin/clients.controller";
 import { usersController } from "../controllers/admin/users.controller";
-import { locationsController } from "../controllers/admin/locations.controller";
 import { integrationsController } from "../controllers/admin/integrations.controller";
 import { mappingsController } from "../controllers/admin/mappings.controller";
 import { syncStatusController as adminSyncStatusController } from "../controllers/admin/syncStatus.controller";
@@ -22,8 +21,6 @@ adminRouter.get("/clients", clientsController.list);
 adminRouter.post("/clients", clientsController.create);
 adminRouter.get("/users", usersController.list);
 adminRouter.post("/users", usersController.create);
-adminRouter.get("/locations", locationsController.list);
-adminRouter.post("/locations", locationsController.create);
 adminRouter.get("/integrations", integrationsController.list);   // [FIX 5]
 adminRouter.post("/integrations", integrationsController.upsert); // [FIX 5]
 adminRouter.get("/mappings", mappingsController.list);             // [FIX 5]

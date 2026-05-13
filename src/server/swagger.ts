@@ -150,5 +150,163 @@ export const openApiSpec = {
         },
       },
     },
+    "/api/admin/clients": {
+      get: {
+        tags: ["Admin"],
+        summary: "List clients",
+        description: "Returns all clients. Agency admin only.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "List of clients",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      slug: { type: "string" },
+                      is_data_initialized: { type: "boolean" },
+                      created_at: { type: "string", format: "date-time" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+      post: {
+        tags: ["Admin"],
+        summary: "Create client",
+        description: "Creates a new client tenant. Agency admin only.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "slug"],
+                properties: {
+                  name: { type: "string", example: "Acme Dental" },
+                  slug: { type: "string", example: "acme-dental", description: "Lowercase letters, numbers, hyphens only" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Client created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    name: { type: "string" },
+                    slug: { type: "string" },
+                    created_at: { type: "string", format: "date-time" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { description: "Validation error or slug already taken", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+    "/api/admin/users": {
+      get: {
+        tags: ["Admin"],
+        summary: "List users",
+        description: "Returns all users with their client name. Agency admin only.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "List of users",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      email: { type: "string" },
+                      role: { type: "string", enum: ["AGENCY_ADMIN", "CLIENT_ADMIN"] },
+                      client_id: { type: "string", nullable: true },
+                      client: { type: "object", nullable: true, properties: { name: { type: "string" } } },
+                      created_at: { type: "string", format: "date-time" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+      post: {
+        tags: ["Admin"],
+        summary: "Create user",
+        description: [
+          "Creates a Supabase Auth user and a Prisma user row in one atomic operation.",
+          "",
+          "Role rules:",
+          "- `AGENCY_ADMIN`: `clientId` must be omitted",
+          "- `CLIENT_ADMIN`: `clientId` required",
+        ].join("\n"),
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email", "password", "role"],
+                properties: {
+                  email: { type: "string", format: "email", example: "manager@acme.com" },
+                  password: { type: "string", minLength: 8, example: "Password123!" },
+                  role: { type: "string", enum: ["AGENCY_ADMIN", "CLIENT_ADMIN"] },
+                  clientId: { type: "string", description: "Required for CLIENT_ADMIN", example: "clxxxxxxxxxxxxxxxx" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "User created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    email: { type: "string" },
+                    role: { type: "string" },
+                    client_id: { type: "string", nullable: true },
+                    created_at: { type: "string", format: "date-time" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { description: "Validation error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
   },
 };
