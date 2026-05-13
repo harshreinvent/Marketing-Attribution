@@ -78,6 +78,7 @@ model Client {
   normalisation_audits NormalisationAudit[]
   sync_runs            SyncRun[]
 
+
   @@map("clients")
 }
 
@@ -96,11 +97,6 @@ model Location {
   // Relations
   client               Client               @relation(fields: [client_id], references: [id])
   user_location_access UserLocationAccess[]
-  google_ads_daily     GoogleAdsDaily[]
-  meta_ads_daily       MetaAdsDaily[]
-  ga4_organic_daily    Ga4OrganicDaily[]
-  gmb_daily            GmbDaily[]
-  crm_opportunities    CrmOpportunity[]
 
   @@unique([client_id, slug])
   @@index([client_id])
@@ -214,7 +210,6 @@ model Mapping {
 model GoogleAdsDaily {
   id            String   @id @default(cuid())
   client_id     String
-  location_id   String
   campaign_id   String
   campaign_name String
   date          DateTime @db.Date
@@ -227,21 +222,16 @@ model GoogleAdsDaily {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  client   Client   @relation(fields: [client_id], references: [id])
-  location Location @relation(fields: [location_id], references: [id])
+  client Client @relation(fields: [client_id], references: [id])
 
-  // location_id included so same campaign in two locations on same date
-  // produces two distinct rows rather than one overwriting the other.
-  @@unique([client_id, location_id, campaign_id, date])
+  @@unique([client_id, campaign_id, date])
   @@index([client_id, date])
-  @@index([client_id, location_id, date])
   @@map("google_ads_daily")
 }
 
 model MetaAdsDaily {
   id            String   @id @default(cuid())
   client_id     String
-  location_id   String
   campaign_id   String
   campaign_name String
   date          DateTime @db.Date
@@ -254,20 +244,17 @@ model MetaAdsDaily {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  client   Client   @relation(fields: [client_id], references: [id])
-  location Location @relation(fields: [location_id], references: [id])
+  client Client @relation(fields: [client_id], references: [id])
 
-  @@unique([client_id, location_id, campaign_id, date])
+  @@unique([client_id, campaign_id, date])
   @@index([client_id, date])
-  @@index([client_id, location_id, date])
   @@map("meta_ads_daily")
 }
 
 model Ga4OrganicDaily {
-  id          String   @id @default(cuid())
-  client_id   String
-  location_id String
-  date        DateTime @db.Date
+  id        String   @id @default(cuid())
+  client_id String
+  date      DateTime @db.Date
 
   // Empty string instead of NULL so @@unique works correctly in PostgreSQL.
   // NULL != NULL in SQL, which breaks unique constraint matching on upsert.
@@ -282,20 +269,17 @@ model Ga4OrganicDaily {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  client   Client   @relation(fields: [client_id], references: [id])
-  location Location @relation(fields: [location_id], references: [id])
+  client Client @relation(fields: [client_id], references: [id])
 
-  @@unique([client_id, location_id, date, channel, landing_page])
+  @@unique([client_id, date, channel, landing_page])
   @@index([client_id, date])
-  @@index([client_id, location_id, date])
   @@map("ga4_organic_daily")
 }
 
 model GmbDaily {
-  id          String   @id @default(cuid())
-  client_id   String
-  location_id String
-  date        DateTime @db.Date
+  id        String   @id @default(cuid())
+  client_id String
+  date      DateTime @db.Date
 
   views              Int @default(0)
   searches           Int @default(0)
@@ -306,23 +290,15 @@ model GmbDaily {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  client   Client   @relation(fields: [client_id], references: [id])
-  location Location @relation(fields: [location_id], references: [id])
+  client Client @relation(fields: [client_id], references: [id])
 
-  // @@unique already creates a covering index on (client_id, location_id, date).
-  // @@index([client_id, date]) is still needed for cross-location aggregates
-  // that filter by client_id + date without knowing location_id upfront.
-  @@unique([client_id, location_id, date])
+  @@unique([client_id, date])
   @@index([client_id, date])
   @@map("gmb_daily")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CRM MODEL
-// One CRM account per client. The worker fetches all opportunities from that
-// single CRM account and maps them to the correct Location using crm_location_id
-// on the Location model and LOCATION mapping rules in the Mapping table.
-//
 // Timestamp naming convention:
 //   crm_created_at / crm_updated_at = timestamps from GHL (external source)
 //   created_at / updated_at on other models = DB-generated timestamps
@@ -334,7 +310,6 @@ model GmbDaily {
 model CrmOpportunity {
   id                 String  @id @default(cuid())
   client_id          String
-  location_id        String
   crm_opportunity_id String
 
   pipeline_id         String?
@@ -357,12 +332,10 @@ model CrmOpportunity {
   synced_at  DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  client   Client   @relation(fields: [client_id], references: [id])
-  location Location @relation(fields: [location_id], references: [id])
+  client Client @relation(fields: [client_id], references: [id])
 
   @@unique([client_id, crm_opportunity_id])
   @@index([client_id, crm_created_at])
-  @@index([client_id, location_id, crm_created_at])
   @@map("crm_opportunities")
 }
 
