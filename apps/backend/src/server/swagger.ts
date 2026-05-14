@@ -196,6 +196,8 @@ export const openApiSpec = {
                 properties: {
                   name: { type: "string", example: "Acme Dental" },
                   slug: { type: "string", example: "acme-dental", description: "Lowercase letters, numbers, hyphens only" },
+                  crmToken: { type: "string", description: "GHL private integration token. Must be provided with crmLocationId.", example: "eyJhbGci..." },
+                  crmLocationId: { type: "string", description: "GHL location (sub-account) ID. Must be provided with crmToken.", example: "abc123xyz" },
                 },
               },
             },
@@ -305,6 +307,63 @@ export const openApiSpec = {
           "400": { description: "Validation error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+    "/api/admin/sync/crm": {
+      post: {
+        tags: ["Admin"],
+        summary: "Trigger CRM sync",
+        description: [
+          "Fetches contacts from GHL and upserts into `crm_opportunities`.",
+          "",
+          "- **First sync** (no existing data): fetches last 30 days",
+          "- **Subsequent syncs**: fetches yesterday only",
+          "",
+          "Requires the client to have a CRM integration configured (set `crmToken` when creating the client).",
+        ].join("\n"),
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["clientId"],
+                properties: {
+                  clientId: { type: "string", example: "clxxxxxxxxxxxxxxxx" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Sync complete",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    clientId:    { type: "string" },
+                    isFirstSync: { type: "boolean" },
+                    dateRange: {
+                      type: "object",
+                      properties: {
+                        from: { type: "string", format: "date-time" },
+                        to:   { type: "string", format: "date-time" },
+                      },
+                    },
+                    upserted: { type: "number", description: "Number of contacts upserted" },
+                  },
+                },
+              },
+            },
+          },
+          "400": { description: "Missing clientId or CRM token not configured", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "401": { description: "Unauthorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Agency admin only", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "404": { description: "No CRM integration found for this client", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         },
       },
     },

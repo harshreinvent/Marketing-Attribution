@@ -1,51 +1,43 @@
-import type { DateRange } from "@repo/types";
 import { prisma } from "../db/prisma";
+import { daysAgo } from "@repo/utils";
 import { crmIntegration } from "../integrations/crm.integration";
-import { ghlOpportunitiesResponseSchema } from "@repo/validators";
 import { crmOpportunityModel } from "../models/crmOpportunity.model";
-import { mapSourceUsingClientRules } from "../normalise/sourceMapping";
-import { mappingModel } from "../models/mapping.model";
 import { syncLogger } from "../logs/syncLogger";
 
-// [FIX 8, 9, 10] polls GHL with crm_last_sync_at, validates opportunity shape, upserts by crm_opportunity_id
-export async function syncCRM(clientId: string, dateRange: DateRange) {
-  const client = await prisma.client.findUniqueOrThrow({ where: { id: clientId } });
-  const since = client.crm_last_sync_at ?? dateRange.from;
+export async function syncCRM(clientId: string) {
+  // Determine date range: first ever sync = 30 days; subsequent = yesterday only
+  const existingCount = await prisma.crmOpportunity.count({ where: { client_id: clientId } });
+  const isFirstSync = existingCount === 0;
 
-  const raw = await crmIntegration.fetchOpportunities(clientId, since);
-  const parsed = ghlOpportunitiesResponseSchema.parse(raw);
+  const from = isFirstSync ? daysAgo(30) : daysAgo(1);
+  // Use start of today as exclusive upper bound so we get all of yesterday
+  const to = new Date();
+  to.setHours(0, 0, 0, 0);
 
-  const sourceRules = await mappingModel.findSourceRules(clientId);
-  let missingSource = 0;
+  syncLogger.info({ clientId, step: "6-syncCRM", isFirstSync, from, to });
 
-  for (const opp of parsed.opportunities) {
-    const source = opp.source
-      ? mapSourceUsingClientRules(opp.source, sourceRules)
-      : null;
-    if (!source) missingSource++;
+  const contacts = await crmIntegration.fetchContacts(clientId, from, to);
 
+  syncLogger.info({ clientId, step: "6-syncCRM", contactsFetched: contacts.length });
+
+  for (const contact of contacts) {
+    const attr = contact.attributionSource;
     await crmOpportunityModel.upsertByOpportunityId(clientId, {
-      crm_opportunity_id: opp.id,
-      pipeline_id: opp.pipelineId,
-      pipeline_stage_id: opp.pipelineStageId,
-      pipeline_stage_name: opp.pipelineStageName,
-      status: opp.status,
-      monetary_value: opp.monetaryValue,
-      contact_id: opp.contactId,
-      source: source ?? opp.source,
-      medium: opp.medium,
-      campaign: opp.campaign,
-      appointment_status: opp.appointmentStatus,
-      created_at: new Date(opp.createdAt),
-      updated_at: new Date(opp.updatedAt),
+      crm_opportunity_id: contact.id,
+      contact_id:         contact.id,
+      source:   attr?.utmSource  ?? contact.source ?? null,
+      medium:   attr?.utmMedium  ?? attr?.medium   ?? null,
+      campaign: attr?.campaign   ?? null,
+      crm_created_at: new Date(contact.dateAdded),
+      crm_updated_at: new Date(contact.dateUpdated ?? contact.dateAdded),
     });
   }
 
-  const missingPct = parsed.opportunities.length > 0
-    ? missingSource / parsed.opportunities.length
-    : 0;
+  // Record when CRM was last synced on the client row
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { crm_last_sync_at: new Date() },
+  });
 
-  if (missingPct > 0.1) {
-    syncLogger.warn({ clientId, missingSourcePct: missingPct, step: "6-syncCRM" });
-  }
+  syncLogger.info({ clientId, step: "6-syncCRM", status: "complete", upserted: contacts.length });
 }

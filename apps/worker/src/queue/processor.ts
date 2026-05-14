@@ -19,7 +19,7 @@ export async function processor(job: SyncJob) {
   await syncMetaAds(clientId, dateRange);
   await syncGA4(clientId, dateRange);
   await syncGMB(clientId, dateRange);
-  await syncCRM(clientId, dateRange);
+  await syncCRM(clientId);
   await invalidateCache(clientId);
   await updateTimestamps(clientId, isFirstRun);
 
