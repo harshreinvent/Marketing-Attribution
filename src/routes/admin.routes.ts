@@ -7,6 +7,7 @@ import { usersController } from "../controllers/admin/users.controller";
 import { integrationsController } from "../controllers/admin/integrations.controller";
 import { mappingsController } from "../controllers/admin/mappings.controller";
 import { syncStatusController as adminSyncStatusController } from "../controllers/admin/syncStatus.controller";
+import { syncCrmController } from "../controllers/admin/syncCrm.controller";
 import type { Session } from "@repo/types";
 
 type Variables = { session: Session };
@@ -26,3 +27,4 @@ adminRouter.post("/integrations", integrationsController.upsert); // [FIX 5]
 adminRouter.get("/mappings", mappingsController.list);             // [FIX 5]
 adminRouter.post("/mappings", mappingsController.upsert);          // [FIX 5]
 adminRouter.get("/sync-status", adminSyncStatusController);
+adminRouter.post("/sync/crm", syncCrmController.trigger);

@@ -8,6 +8,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
       err.statusCode as Parameters<typeof c.json>[1]
     );
   }
-  // Never expose stack traces in production
+  // Log the real error server-side, never expose stack traces to client
+  console.error("[INTERNAL_ERROR]", err);
   return c.json({ error: "INTERNAL_ERROR", message: "An unexpected error occurred" }, 500);
 };
