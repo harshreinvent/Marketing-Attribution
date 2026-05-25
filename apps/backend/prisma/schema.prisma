@@ -1,0 +1,990 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  AGENCY_MEMBER
+  CLIENT_ADMIN
+  CLIENT_MEMBER
+}
+
+enum ChannelType {
+  GOOGLE_ADS
+  META_ADS
+  SEO_ORGANIC
+  GBP
+  ORGANIC_SOCIAL
+  WHATSAPP
+  DIRECT
+  UNKNOWN
+}
+
+enum LeadSource {
+  GOOGLE_ADS
+  META_ADS
+  GBP
+  ORGANIC_SEARCH
+  ORGANIC_SOCIAL
+  WHATSAPP
+  DIRECT
+  REFERRAL
+  FORM
+  UNKNOWN
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  APPOINTMENT_CONFIRMED
+  SECOND_CONSULTATION
+  TREATMENT_DONE
+  SHOWED_UP
+  NOT_PICKED
+  LOST
+  UNKNOWN
+}
+
+enum IntegrationProvider {
+  GOOGLE_ADS
+  META_ADS
+  GOOGLE_ANALYTICS
+  GOOGLE_SEARCH_CONSOLE
+  GMB
+  CRM
+  CALLHIPPO
+  EXOTEL
+  GOHIGHLEVEL
+}
+
+enum ServiceType {
+  GOOGLE_ADS
+  META_ADS
+  WEBSITE_ORGANIC
+  GMB
+  WHATSAPP
+  SEO
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum MappingType {
+  SOURCE
+  CAMPAIGN
+  LOCATION
+  PIPELINE_STAGE
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  password    String
+  firstName   String
+  lastName    String
+  role        UserRole  @default(AGENCY_MEMBER)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Agency users have agencyId; client users have both
+  agencyId String?
+  agency   Agency? @relation(fields: [agencyId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  refreshTokens      RefreshToken[]
+  userLocationAccess UserLocationAccess[]
+
+  @@index([agencyId])
+  @@index([clientId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AGENCY — one record (your marketing company)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Agency {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users   User[]
+  clients Client[]
+
+  @@map("agencies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT — one per hospital / clinic group
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Client {
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  industry              String    @default("healthcare")
+  isActive              Boolean   @default(true)
+  websiteSplitByLocation Boolean  @default(false)
+
+  // Sync state
+  isDataInitialized    Boolean   @default(false)
+  initialSyncDays      Int       @default(30)
+  lastSuccessfulSyncAt DateTime?
+  crmLastSyncAt        DateTime?
+  syncFailureCount     Int       @default(0)
+  isSyncPaused         Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agencyId String?
+  agency   Agency? @relation(fields: [agencyId], references: [id])
+
+  // Relations
+  users                  User[]
+  locations              Location[]
+  services               ClientService[]
+  integrations           Integration[]
+  mappings               Mapping[]
+  campaigns              Campaign[]
+  leads                  Lead[]
+  callLogs               CallLog[]
+  syncLogs               SyncLog[]
+  userLocationAccess     UserLocationAccess[]
+  googleAdsDaily         GoogleAdsDaily[]
+  metaAdsDaily           MetaAdsDaily[]
+  ga4OrganicDaily        Ga4OrganicDaily[]
+  ga4DailyOverview       Ga4DailyOverview[]
+  ga4ChannelMetrics      Ga4ChannelMetrics[]
+  ga4LandingPageMetrics  Ga4LandingPageMetrics[]
+  ga4EventMetrics        Ga4EventMetrics[]
+  gmbDaily               GmbDaily[]
+  crmOpportunities       CrmOpportunity[]
+  normalisationAudits    NormalisationAudit[]
+  syncRuns               SyncRun[]
+
+  @@index([agencyId])
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT SERVICE — which marketing services each client runs
+// This drives which dashboard tabs are shown
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ClientService {
+  id           String      @id @default(cuid())
+  service      ServiceType
+  isActive     Boolean     @default(true)
+  notes        String?
+  configuredAt DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, service])
+  @@map("client_services")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCATION — one per physical branch
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Location {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String?
+  city          String   @default("")
+  address       String?
+  trackingPhone String?  // Exotel virtual number
+  realPhone     String?
+  crmLocationId String?  // GHL sub-account / branch id
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  gmbListings        GmbListing[]
+  leads              Lead[]
+  callLogs           CallLog[]
+  websiteMetrics     WebsiteMetric[]
+  userLocationAccess UserLocationAccess[]
+
+  @@unique([clientId, slug])
+  @@index([clientId])
+  @@map("locations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GMB LISTING — one location can have multiple Google Business Profile listings
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GmbListing {
+  id            String   @id @default(cuid())
+  listingId     String   // Google Business Profile location ID (e.g. "locations/12345678")
+  name          String
+  address       String?
+  trackingPhone String?
+  realPhone     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  gmbDaily GmbDaily[]
+
+  @@unique([locationId, listingId])
+  @@map("gmb_listings")
+}
+
+// Junction: user ↔ location access (agency-assigned)
+model UserLocationAccess {
+  id         String   @id @default(cuid())
+  userId     String
+  clientId   String
+  locationId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  client   Client   @relation(fields: [clientId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([userId, locationId])
+  @@index([userId])
+  @@index([clientId])
+  @@map("user_location_access")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INTEGRATION — API credentials per client per provider
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Integration {
+  id           String              @id @default(cuid())
+  provider     IntegrationProvider
+  isActive     Boolean             @default(true)
+  accessToken  String?
+  refreshToken String?
+  tokenExpiry  DateTime?
+  accountId    String?
+  extraConfig  Json?
+  credentials  Json?               // legacy blob — kept for backward compat
+  lastSyncAt   DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, provider])
+  @@index([clientId])
+  @@map("integrations")
+}
+
+// Per-client normalisation rules
+model Mapping {
+  id        String      @id @default(cuid())
+  type      MappingType
+  ruleKey   String
+  ruleValue String
+  createdAt DateTime    @default(now())
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, type, ruleKey])
+  @@index([clientId, type])
+  @@map("mappings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPAIGN — synced from Google Ads / Meta Ads
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Campaign {
+  id                  String      @id @default(cuid())
+  externalId          String
+  name                String
+  channel             ChannelType
+  status              String?
+  objective           String?
+  biddingStrategyType String?
+  dailyBudget         Float?
+  startDate           DateTime?
+  endDate             DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  adSets  AdSet[]
+  metrics CampaignMetric[]
+  leads   Lead[]
+
+  @@unique([clientId, externalId, channel])
+  @@index([clientId])
+  @@map("campaigns")
+}
+
+model AdSet {
+  id         String   @id @default(cuid())
+  externalId String
+  name       String
+  targeting  Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  ads     Ad[]
+  metrics AdSetMetric[]
+
+  @@map("ad_sets")
+}
+
+model Ad {
+  id         String   @id @default(cuid())
+  externalId String
+  name       String
+  creative   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  adSetId String
+  adSet   AdSet  @relation(fields: [adSetId], references: [id])
+
+  metrics AdMetric[]
+
+  @@map("ads")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY AD METRICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CampaignMetric {
+  id                    String   @id @default(cuid())
+  date                  DateTime @db.Date
+  impressions           Int      @default(0)
+  clicks                Int      @default(0)
+  spend                 Float    @default(0)
+  conversions           Int      @default(0)
+  ctr                   Float?
+  cpc                   Float?
+  cpm                   Float?
+  cpa                   Float?
+  roas                  Float?
+  reach                 Int?
+  frequency             Float?
+  leads                 Int      @default(0)
+  calls                 Int      @default(0)
+  appointments          Int      @default(0)
+  revenue               Float?
+  interactions          Int      @default(0)
+  convRate              Float?
+  activeViewImpressions Int?
+  activeViewCpm         Float?
+  createdAt             DateTime @default(now())
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+
+  @@unique([campaignId, date])
+  @@map("campaign_metrics")
+}
+
+model AdSetMetric {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  spend       Float    @default(0)
+  conversions Int      @default(0)
+  ctr         Float?
+  cpc         Float?
+  leads       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  adSetId String
+  adSet   AdSet  @relation(fields: [adSetId], references: [id])
+
+  @@unique([adSetId, date])
+  @@map("ad_set_metrics")
+}
+
+model AdMetric {
+  id             String   @id @default(cuid())
+  date           DateTime @db.Date
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  spend          Float    @default(0)
+  conversions    Int      @default(0)
+  ctr            Float?
+  cpc            Float?
+  leads          Int      @default(0)
+  postEngagement Int?
+  createdAt      DateTime @default(now())
+
+  adId String
+  ad   Ad     @relation(fields: [adId], references: [id])
+
+  @@unique([adId, date])
+  @@map("ad_metrics")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WEBSITE METRIC — daily GA4 snapshot
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WebsiteMetric {
+  id              String      @id @default(cuid())
+  date            DateTime    @db.Date
+  channel         ChannelType
+  deviceCategory  String?
+  sessions        Int         @default(0)
+  engagedSessions Int         @default(0)
+  activeUsers30d  Int?
+  formLeads       Int         @default(0)
+  callLeads       Int         @default(0)
+  leadConvRate    Float?
+  bounceRate      Float?
+  landingPage     String?
+  createdAt       DateTime    @default(now())
+
+  clientId   String
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  @@map("website_metrics")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAD — one per patient inquiry
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id         String      @id @default(cuid())
+  externalId String?
+  name       String?
+  phone      String?
+  email      String?
+  source     LeadSource
+  channel    ChannelType
+  status     LeadStatus  @default(NEW)
+
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+
+  gclid String?
+  fbclid String?
+
+  keyword     String?
+  landingPage String?
+  adSetName   String?
+  adName      String?
+
+  isQualified Boolean   @default(false)
+  qualifiedAt DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+
+  callLogs     CallLog[]
+  appointments Appointment[]
+  stageHistory LeadStageHistory[]
+
+  @@index([clientId, createdAt])
+  @@index([clientId, status])
+  @@map("leads")
+}
+
+model LeadStageHistory {
+  id        String     @id @default(cuid())
+  stage     LeadStatus
+  note      String?
+  createdAt DateTime   @default(now())
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  @@map("lead_stage_history")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CALL LOG — tracked via Exotel webhooks
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CallLog {
+  id             String       @id @default(cuid())
+  externalId     String?
+  direction      String
+  duration       Int?
+  status         String?
+  recordingUrl   String?
+  callerNumber   String?
+  receiverNumber String?
+  source         LeadSource?
+  channel        ChannelType?
+  outcome        String?
+  isQualified    Boolean      @default(false)
+  aiSummary      String?
+
+  gclid       String?
+  fbclid      String?
+  keyword     String?
+  utmSource   String?
+  utmCampaign String?
+
+  callAt    DateTime
+  createdAt DateTime @default(now())
+
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+  leadId     String?
+  lead       Lead?    @relation(fields: [leadId], references: [id])
+
+  @@index([clientId, callAt])
+  @@map("call_logs")
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  scheduledAt DateTime
+  status      String
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  @@map("appointments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRECOMPUTED SNAPSHOTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FunnelSnapshot {
+  id              String       @id @default(cuid())
+  date            DateTime     @db.Date
+  channel         ChannelType?
+  leadsReceived   Int          @default(0)
+  apptConfirmed   Int          @default(0)
+  secondConsult   Int          @default(0)
+  calledNotPicked Int          @default(0)
+  treatmentDone   Int          @default(0)
+  showedUp        Int          @default(0)
+  createdAt       DateTime     @default(now())
+
+  clientId String
+
+  @@unique([clientId, date, channel])
+  @@map("funnel_snapshots")
+}
+
+model RoiBlend {
+  id             String      @id @default(cuid())
+  date           DateTime    @db.Date
+  channel        ChannelType
+  totalSpend     Float       @default(0)
+  totalLeads     Int         @default(0)
+  qualifiedLeads Int         @default(0)
+  appointments   Int         @default(0)
+  revenue        Float?
+  cpl            Float?
+  roas           Float?
+  createdAt      DateTime    @default(now())
+
+  clientId String
+
+  @@unique([clientId, date, channel])
+  @@map("roi_blend")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYNC LOG (external-backend style — one row per sync run)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SyncLog {
+  id          String     @id @default(cuid())
+  provider    String
+  status      SyncStatus @default(PENDING)
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+  recordsSync Int        @default(0)
+  errorMsg    String?
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId, startedAt])
+  @@map("sync_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GOOGLE AGENCY AUTH — one row, stores encrypted OAuth refresh token
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GoogleAgencyAuth {
+  id                     String   @id @default(cuid())
+  provider               String   @default("google")
+  accountEmail           String   @default("")
+  refreshTokenEncrypted  String
+  scopes                 String
+  status                 String   @default("active")
+  lastError              String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("google_agency_auth")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GA4 DATA TABLES — populated by agency-level sync job
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Ga4DailyOverview {
+  id          String   @id @default(cuid())
+  clientId    String
+  propertyId  String
+  date        DateTime @db.Date
+
+  sessions        Int   @default(0)
+  activeUsers     Int   @default(0)
+  newUsers        Int   @default(0)
+  engagedSessions Int   @default(0)
+  engagementRate  Float @default(0)
+  eventCount      Int   @default(0)
+  keyEvents       Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, propertyId, date])
+  @@index([clientId, date])
+  @@map("ga4_daily_overview")
+}
+
+model Ga4ChannelMetrics {
+  id          String   @id @default(cuid())
+  clientId    String
+  propertyId  String
+  date        DateTime @db.Date
+
+  channelGroup String @default("")
+  source       String @default("")
+  medium       String @default("")
+  campaign     String @default("")
+
+  sessions        Int   @default(0)
+  activeUsers     Int   @default(0)
+  newUsers        Int   @default(0)
+  engagedSessions Int   @default(0)
+  engagementRate  Float @default(0)
+  eventCount      Int   @default(0)
+  keyEvents       Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, propertyId, date, channelGroup, source, medium, campaign])
+  @@index([clientId, date])
+  @@map("ga4_channel_metrics")
+}
+
+model Ga4LandingPageMetrics {
+  id          String   @id @default(cuid())
+  clientId    String
+  propertyId  String
+  date        DateTime @db.Date
+
+  landingPage String @default("")
+
+  sessions        Int   @default(0)
+  activeUsers     Int   @default(0)
+  engagedSessions Int   @default(0)
+  engagementRate  Float @default(0)
+  eventCount      Int   @default(0)
+  keyEvents       Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, propertyId, date, landingPage])
+  @@index([clientId, date])
+  @@map("ga4_landing_page_metrics")
+}
+
+model Ga4EventMetrics {
+  id          String   @id @default(cuid())
+  clientId    String
+  propertyId  String
+  date        DateTime @db.Date
+
+  eventName   String @default("not_set")
+  eventCount  Int    @default(0)
+  activeUsers Int    @default(0)
+  keyEvents   Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, propertyId, date, eventName])
+  @@index([clientId, date])
+  @@map("ga4_event_metrics")
+}
+
+// Legacy GA4 organic summary (kept for backward compat)
+model Ga4OrganicDaily {
+  id       String   @id @default(cuid())
+  clientId String
+  date     DateTime @db.Date
+
+  channel     String @default("")
+  landingPage String @default("")
+
+  sessions   Int   @default(0)
+  users      Int   @default(0)
+  pageViews  Int   @default(0)
+  bounceRate Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, date, channel, landingPage])
+  @@index([clientId, date])
+  @@map("ga4_organic_daily")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGACY AD DAILY TABLES — kept for backward compat with existing sync jobs
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GoogleAdsDaily {
+  id           String   @id @default(cuid())
+  clientId     String
+  campaignId   String
+  campaignName String
+  date         DateTime @db.Date
+
+  impressions Int     @default(0)
+  clicks      Int     @default(0)
+  cost        Decimal @default(0) @db.Decimal(14, 2)
+  conversions Decimal @default(0) @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, campaignId, date])
+  @@index([clientId, date])
+  @@map("google_ads_daily")
+}
+
+model MetaAdsDaily {
+  id           String   @id @default(cuid())
+  clientId     String
+  campaignId   String
+  campaignName String
+  date         DateTime @db.Date
+
+  impressions Int     @default(0)
+  clicks      Int     @default(0)
+  spend       Decimal @default(0) @db.Decimal(14, 2)
+  leads       Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, campaignId, date])
+  @@index([clientId, date])
+  @@map("meta_ads_daily")
+}
+
+model GmbDaily {
+  id         String   @id @default(cuid())
+  clientId   String
+  listingId  String   // GmbListing.id (internal FK)
+  date       DateTime @db.Date
+
+  // Impressions breakdown (from Business Profile Performance API)
+  impressionsDesktopMaps   Int @default(0)
+  impressionsDesktopSearch Int @default(0)
+  impressionsMobileMaps    Int @default(0)
+  impressionsMobileSearch  Int @default(0)
+
+  // Actions
+  directionRequests Int @default(0)
+  callClicks        Int @default(0)
+  websiteClicks     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client  Client     @relation(fields: [clientId], references: [id])
+  listing GmbListing @relation(fields: [listingId], references: [id])
+
+  @@unique([listingId, date])
+  @@index([clientId, date])
+  @@map("gmb_daily")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRM OPPORTUNITY — synced from GHL
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CrmOpportunity {
+  id               String  @id @default(cuid())
+  clientId         String
+  crmOpportunityId String
+
+  pipelineId        String?
+  pipelineStageId   String?
+  pipelineStageName String?
+  status            String?
+  monetaryValue     Decimal? @db.Decimal(14, 2)
+  contactId         String?
+  source            String?
+  medium            String?
+  campaign          String?
+  appointmentStatus String?
+
+  crmCreatedAt DateTime
+  crmUpdatedAt DateTime
+  syncedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, crmOpportunityId])
+  @@index([clientId, crmCreatedAt])
+  @@map("crm_opportunities")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYNC MONITORING — detailed step-by-step sync run log
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SyncRun {
+  id         String     @id @default(cuid())
+  clientId   String
+  status     SyncStatus
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+  dateFrom   DateTime?  @db.Date
+  dateTo     DateTime?  @db.Date
+  error      String?
+
+  client Client        @relation(fields: [clientId], references: [id])
+  steps  SyncStepRun[]
+
+  @@index([clientId, startedAt])
+  @@map("sync_runs")
+}
+
+model SyncStepRun {
+  id            String     @id @default(cuid())
+  syncRunId     String
+  stepName      String
+  status        SyncStatus
+  rowsProcessed Int        @default(0)
+  error         String?
+  startedAt     DateTime   @default(now())
+  finishedAt    DateTime?
+
+  syncRun SyncRun @relation(fields: [syncRunId], references: [id])
+
+  @@index([syncRunId])
+  @@map("sync_step_runs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model NormalisationAudit {
+  id         String   @id @default(cuid())
+  clientId   String
+  tableName  String
+  original   String
+  normalised String
+  createdAt  DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId, tableName])
+  @@map("normalisation_audit")
+}
