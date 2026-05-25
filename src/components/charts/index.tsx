@@ -53,7 +53,7 @@ export const LeadTrendChart = ({ data, height = 200 }: { data: LineData[]; heigh
   </ResponsiveContainer>
 )
 
-// ─── CTR Line Chart (from old setup) ─────────────────────────────────
+// ─── CTR Line Chart ───────────────────────────────────────────────────
 
 interface CTRData { date: string; ctr: number }
 
@@ -72,7 +72,7 @@ export const CTRLineChart = ({ data, height = 200 }: { data: CTRData[]; height?:
   </ResponsiveContainer>
 )
 
-// ─── Location Bar Chart (from old setup) ─────────────────────────────
+// ─── Location Bar Chart ───────────────────────────────────────────────
 
 interface LocationData { location: string; value: number }
 
@@ -148,3 +148,88 @@ export const PieLegend = ({ data }: { data: { name: string; value: number; perce
     ))}
   </div>
 )
+
+// ─── MetricLineChart — REUSABLE multi-metric line chart ───────────────
+// Used in: GoogleAdsTab (clicks, impressions)
+//          WebsiteTab (sessions, eventCount, leads)
+//          MetaAdsTab (clicks, impressions, leads) — future
+//
+// Props:
+//   data   — array of objects with a 'date' key + any metric keys
+//   lines  — which keys to plot: [{ key, name, color }]
+//   title  — chart heading
+//   height — optional height (default 220)
+
+export interface MetricLine {
+  key: string
+  name: string
+  color: string
+}
+
+export const MetricLineChart = ({
+  data,
+  lines,
+  title,
+  height = 220,
+}: {
+  data: Record<string, number | string>[]
+  lines: MetricLine[]
+  title: string
+  height?: number
+}) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-40 text-sm text-slate-400">
+        No trend data available for this period
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-semibold text-teal-600 text-center mb-3">{title}</p>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
+            interval="preserveStartEnd"
+            tickFormatter={d => {
+              const dt = new Date(d)
+              return `${dt.toLocaleString('default', { month: 'short' })} ${dt.getDate()}`
+            }}
+          />
+          <YAxis
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
+            tickFormatter={formatNumber}
+          />
+          <Tooltip
+            formatter={(v: number, name: string) => [formatNumber(v), name]}
+            labelFormatter={l => {
+              const dt = new Date(l)
+              return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+            }}
+            contentStyle={{ borderRadius: 8, border: '1px solid #f1f5f9', fontSize: 12 }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+            iconType="plainline"
+          />
+          {lines.map(l => (
+            <Line
+              key={l.key}
+              type="monotone"
+              dataKey={l.key}
+              name={l.name}
+              stroke={l.color}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}

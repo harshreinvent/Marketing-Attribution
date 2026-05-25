@@ -134,6 +134,7 @@ export interface GoogleAdsSummary {
 
 export interface MetaAdsSummary {
   hasIntegration: boolean
+  hasAdsTable: boolean  
   metaSpend: number
   impressions: number
   clicks: number

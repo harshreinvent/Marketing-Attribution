@@ -1,6 +1,6 @@
 'use client'
 import { StatCard, Card, CardHeader, CardTitle, Table, Th, Td, LoadingState, ErrorState, NoIntegration } from '@/components/ui'
-import { CTRLineChart } from '@/components/charts'
+import { MetricLineChart } from '@/components/charts'
 import { ExportButton } from '@/components/common/ExportButton'
 import { useGoogleAds } from '@/hooks/useDashboard'
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils'
@@ -15,10 +15,12 @@ export const GoogleAdsTab = ({ clientId, dateRange }: { clientId: string; dateRa
   if (!data) return null
   if (!data.hasIntegration) return <NoIntegration service="Google Ads" />
 
-  // Prepare CTR trend data from campaigns (mock daily trend using campaign data)
-  const ctrData = data.campaigns.map((c, i) => ({
+  // Build trend data from campaigns (each campaign = one data point)
+  // When backend adds dailyTrend array, replace this with: data.dailyTrend
+  const trendData = data.campaigns.map((c, i) => ({
     date: `Camp ${i + 1}`,
-    ctr: c.conversions > 0 ? c.conversions / c.clicks : 0,
+    clicks: c.clicks,
+    impressions: c.impressions,
   }))
 
   return (
@@ -40,7 +42,7 @@ export const GoogleAdsTab = ({ clientId, dateRange }: { clientId: string; dateRa
         <StatCard label="True ROI %" value={`${data.trueRoi}%`} color={data.trueRoi >= 0 ? 'text-emerald-600' : 'text-red-500'} />
       </div>
 
-      {/* Campaign table */}
+      {/* Campaign table — fixed header, scrollable rows */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -49,31 +51,62 @@ export const GoogleAdsTab = ({ clientId, dateRange }: { clientId: string; dateRa
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
-          <Table>
-            <thead>
-              <tr>
-                <Th>#</Th><Th>Campaign Name</Th><Th>Spend (₹)</Th>
-                <Th>Impressions</Th><Th>Clicks</Th><Th>Conversions</Th>
-                <Th>CPA (₹)</Th><Th>ROAS</Th>
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 z-10 bg-white">
+              <tr className="border-b border-slate-100">
+                <Th>#</Th>
+                <Th>Campaign Name</Th>
+                <Th>Spend (₹)</Th>
+                <Th>Impressions</Th>
+                <Th>Clicks</Th>
+                <Th>Conversions</Th>
+                <Th>CPA (₹)</Th>
+                <Th>ROAS</Th>
               </tr>
             </thead>
-            <tbody>
-              {data.campaigns.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-10 text-sm text-slate-400">No campaign data for this period</td></tr>
-              ) : data.campaigns.map((row, i) => (
-                <tr key={i} className="hover:bg-slate-50 transition-colors">
-                  <Td className="text-slate-400 text-xs">{i + 1}</Td>
-                  <Td className="font-medium max-w-[200px] truncate text-slate-800" title={row.campaignName}>{row.campaignName}</Td>
-                  <Td className="font-semibold">{formatCurrency(row.spend)}</Td>
-                  <Td>{formatNumber(row.impressions)}</Td>
-                  <Td>{formatNumber(row.clicks)}</Td>
-                  <Td>{formatNumber(row.conversions)}</Td>
-                  <Td>{row.cpa ? formatCurrency(row.cpa) : <span className="text-slate-300">—</span>}</Td>
-                  <Td>{row.roas || <span className="text-slate-300">0</span>}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+          </table>
+          <div className="overflow-y-auto max-h-[320px] hide-scrollbar">
+            <table className="w-full text-sm border-collapse">
+              <tbody>
+                {data.campaigns.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-10 text-sm text-slate-400">
+                      No campaign data for this period
+                    </td>
+                  </tr>
+                ) : data.campaigns.map((row, i) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors border-b border-slate-50">
+                    <Td className="text-slate-400 text-xs">{i + 1}</Td>
+                    <Td className="font-medium max-w-[200px] truncate text-slate-800" title={row.campaignName}>{row.campaignName}</Td>
+                    <Td className="font-semibold">{formatCurrency(row.spend)}</Td>
+                    <Td>{formatNumber(row.impressions)}</Td>
+                    <Td>{formatNumber(row.clicks)}</Td>
+                    <Td>{formatNumber(row.conversions)}</Td>
+                    <Td>{row.cpa ? formatCurrency(row.cpa) : <span className="text-slate-300">—</span>}</Td>
+                    <Td>{row.roas || <span className="text-slate-300">0</span>}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Card>
+
+      {/* Clicks & Impressions trend chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Clicks & Impressions Trend</CardTitle>
+        </CardHeader>
+        <div className="px-4 pb-4">
+          <MetricLineChart
+            title="Google Ads — Clicks & Impressions"
+            data={trendData}
+            lines={[
+              { key: 'clicks',      name: 'Clicks',      color: '#5563f8' },
+              { key: 'impressions', name: 'Impressions',  color: '#f59e0b' },
+            ]}
+            height={240}
+          />
         </div>
       </Card>
     </div>

@@ -16,10 +16,49 @@ body {
 }
 
 /* Clean scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* Modern thin scrollbar */
 
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Hides ALL scrollbars */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hides only horizontal scrollbar, keeps vertical visible */
+.hide-x-scrollbar::-webkit-scrollbar {
+  height: 0px;  /* hides bottom/horizontal scrollbar */
+  width: 6px;   /* keeps right/vertical scrollbar */
+}
+.hide-x-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hide-x-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 99px;
+}
+.hide-x-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
 /* Date input cleanup */
 input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.4; cursor: pointer; }

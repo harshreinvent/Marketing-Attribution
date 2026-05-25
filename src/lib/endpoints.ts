@@ -25,6 +25,7 @@ export const authApi = {
 
 // ─── Clients ─────────────────────────────────────────────────────────
 
+
 export const clientsApi = {
   getAll: async (): Promise<Client[]> => {
     const { data } = await api.get<ApiResponse<Client[]>>('/clients')
@@ -44,6 +45,63 @@ export const clientsApi = {
   getLocations: async (clientId: string): Promise<Location[]> => {
     const { data } = await api.get<ApiResponse<Location[]>>(`/clients/${clientId}/locations`)
     return data.data
+  },
+
+  create: async (payload: any) => {
+    const { data } = await api.post('/clients', payload)
+    return data.data
+  },
+
+    update: async (clientId: string, payload: any) => {
+    const { data } = await api.patch(`/clients/${clientId}`, payload)
+    return data.data
+  },
+
+  delete: async (clientId: string) => {
+    await api.delete(`/clients/${clientId}`)
+  },
+
+  toggleActive: async (clientId: string, isActive: boolean) => {
+    const { data } = await api.patch(`/clients/${clientId}`, { isActive })
+    return data.data
+  },
+
+  updateServices: async (clientId: string, services: string[]) => {
+    const { data } = await api.post(`/clients/${clientId}/services`, { services })
+    return data.data
+  },
+
+  getUsers: async (clientId: string) => {
+    const { data } = await api.get(`/clients/${clientId}/users`)
+    return data.data
+  },
+
+  createUser: async (clientId: string, payload: any) => {
+    const { data } = await api.post(`/clients/${clientId}/users`, payload)
+    return data.data
+  },
+
+  deleteUser: async (clientId: string, userId: string) => {
+    await api.delete(`/clients/${clientId}/users/${userId}`)
+  },
+
+  upsertIntegration: async (clientId: string, payload: any) => {
+    const { data } = await api.post(`/clients/${clientId}/integrations`, payload)
+    return data.data
+  },
+
+  createLocation: async (clientId: string, payload: any) => {
+    const { data } = await api.post(`/clients/${clientId}/locations`, payload)
+    return data.data
+  },
+
+  updateLocation: async (clientId: string, locationId: string, payload: any) => {
+    const { data } = await api.patch(`/clients/${clientId}/locations/${locationId}`, payload)
+    return data.data
+  },
+
+  deleteLocation: async (clientId: string, locationId: string) => {
+    await api.delete(`/clients/${clientId}/locations/${locationId}`)
   },
 }
 
@@ -95,16 +153,25 @@ export const dashboardApi = {
 
 // ─── Sync ────────────────────────────────────────────────────────────
 
+
 export const syncApi = {
-  trigger: async (clientId: string) => {
-    const { data } = await api.post(`/clients/${clientId}/sync/trigger`, {
+  trigger: async (clientId: string, params?: { providers: string[]; startDate?: string; endDate?: string }) => {
+    const { data } = await api.post(`/clients/${clientId}/sync/trigger`, params || {
       providers: ['GOOGLE_ADS', 'META_ADS', 'GA4'],
     })
     return data
   },
 
-  getLogs: async (clientId: string) => {
-    const { data } = await api.get(`/clients/${clientId}/sync/logs`)
+  // Per-client paginated logs
+  getLogs: async (clientId: string, page = 1, pageSize = 15) => {
+    const { data } = await api.get(`/clients/${clientId}/sync/logs`, { params: { page, pageSize } })
+    return data.data
+  },
+
+  // All clients combined — single paginated call
+  getAllLogs: async (params?: { page?: number; pageSize?: number; clientId?: string; provider?: string; status?: string }) => {
+    const { data } = await api.get('/sync/logs', { params: { pageSize: 15, ...params } })
     return data.data
   },
 }
+

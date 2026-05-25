@@ -92,6 +92,8 @@ export const Badge = ({ variant = 'gray', children }: { variant?: BadgeVariant; 
 
 // ─── Loading ──────────────────────────────────────────────────────────
 
+// ─── Loading ──────────────────────────────────────────────────────────
+
 export const Spinner = ({ className }: { className?: string }) => (
   <Loader2 className={cn('animate-spin text-brand-500', className)} size={20} />
 )
@@ -100,6 +102,70 @@ export const LoadingState = ({ message = 'Loading...' }: { message?: string }) =
   <div className="flex flex-col items-center justify-center py-16 gap-3">
     <Spinner className="w-8 h-8" />
     <p className="text-sm text-slate-500">{message}</p>
+  </div>
+)
+
+type LoaderType = 'ring' | 'custom'
+
+export const Loader = ({ type = 'ring' }: { type?: LoaderType }) => (
+  <div style={{
+    position: 'fixed',
+    inset: 0,
+    zIndex: 9999,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }}>
+    {type === 'ring' ? (
+      <div style={{
+        width: '36px',
+        height: '36px',
+        borderRadius: '50%',
+        border: '3px solid rgba(255,255,255,0.2)',
+        borderTopColor: '#ffffff',
+        animation: 'loaderSpin 0.7s linear infinite',
+      }} />
+    ) : (
+      <div className="custom-loader" style={{
+        position: 'relative',
+        width: '2.5em',
+        height: '2.5em',
+        transform: 'rotate(165deg)',
+      }} />
+    )}
+
+    <style>{`
+      @keyframes loaderSpin {
+        to { transform: rotate(360deg); }
+      }
+      .custom-loader::before,
+      .custom-loader::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        display: block;
+        width: 0.5em;
+        height: 0.5em;
+        border-radius: 0.25em;
+        transform: translate(-50%, -50%);
+      }
+      .custom-loader::before { animation: before8 2s infinite; }
+      .custom-loader::after  { animation: after6 2s infinite; }
+      @keyframes before8 {
+        0%   { width: 0.5em; box-shadow: 1em -0.5em rgba(225,20,98,0.75), -1em 0.5em rgba(111,202,220,0.75); }
+        35%  { width: 2.5em; box-shadow: 0 -0.5em rgba(225,20,98,0.75), 0 0.5em rgba(111,202,220,0.75); }
+        70%  { width: 0.5em; box-shadow: -1em -0.5em rgba(225,20,98,0.75), 1em 0.5em rgba(111,202,220,0.75); }
+        100% { box-shadow: 1em -0.5em rgba(225,20,98,0.75), -1em 0.5em rgba(111,202,220,0.75); }
+      }
+      @keyframes after6 {
+        0%   { height: 0.5em; box-shadow: 0.5em 1em rgba(61,184,143,0.75), -0.5em -1em rgba(233,169,32,0.75); }
+        35%  { height: 2.5em; box-shadow: 0.5em 0 rgba(61,184,143,0.75), -0.5em 0 rgba(233,169,32,0.75); }
+        70%  { height: 0.5em; box-shadow: 0.5em -1em rgba(61,184,143,0.75), -0.5em 1em rgba(233,169,32,0.75); }
+        100% { box-shadow: 0.5em 1em rgba(61,184,143,0.75), -0.5em -1em rgba(233,169,32,0.75); }
+      }
+    `}</style>
   </div>
 )
 

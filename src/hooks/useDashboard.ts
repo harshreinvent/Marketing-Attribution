@@ -25,7 +25,7 @@ export const useCapabilities = (clientId: string) =>
     queryKey: QUERY_KEYS.capabilities(clientId),
     queryFn: () => clientsApi.getCapabilities(clientId),
     enabled: !!clientId,
-    staleTime: 10 * 60 * 1000, // capabilities rarely change — cache 10 min
+    staleTime: 0
   })
 
 // ─── Dashboard tabs ───────────────────────────────────────────────────
@@ -72,7 +72,7 @@ export const useClients = () =>
   useQuery({
     queryKey: QUERY_KEYS.clients(),
     queryFn: () => clientsApi.getAll(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   })
 
 // ─── Sync logs ────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ export const useSyncLogs = (clientId: string) =>
     queryKey: QUERY_KEYS.syncLogs(clientId),
     queryFn: () => syncApi.getLogs(clientId),
     enabled: !!clientId,
-    refetchInterval: 30 * 1000,
+    // refetchInterval: 30 * 1000,
   })
 
 // ─── Date range state ─────────────────────────────────────────────────

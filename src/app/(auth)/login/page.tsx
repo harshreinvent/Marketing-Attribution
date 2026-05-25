@@ -119,7 +119,7 @@ export default function LoginPage() {
               {[
                 { label: 'Agency Admin', email: 'admin@agency.com' },
                 { label: 'Eledent Client', email: 'admin@eledent.com' },
-                { label: 'Asian Client', email: 'admin@asianclinic.com' },
+                { label: 'Asian Client', email: 'admin@asiandental.com' },
                 { label: 'Member', email: 'member@agency.com' },
               ].map(u => (
                 <button

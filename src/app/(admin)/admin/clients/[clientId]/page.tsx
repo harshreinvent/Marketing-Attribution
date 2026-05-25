@@ -6,7 +6,7 @@ import { useAuthInit } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/auth.store'
 import { useCapabilities, useDateRange } from '@/hooks/useDashboard'
 import { clientsApi, syncApi } from '@/lib/endpoints'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { SyncBanner } from '@/components/common/SyncBanner'
@@ -17,7 +17,6 @@ import { MetaAdsTab } from '@/components/dashboard/MetaAdsTab'
 import { WebsiteTab } from '@/components/dashboard/WebsiteTab'
 import { FunnelRoiTab } from '@/components/dashboard/FunnelRoiTab'
 import { LayoutDashboard, BarChart3, Target, Globe, TrendingUp, ArrowLeft } from 'lucide-react'
-import { DATE_PRESETS } from '@/utils'
 
 export default function ClientDashboardPage() {
   useAuthInit()
@@ -30,8 +29,8 @@ export default function ClientDashboardPage() {
   const { data: capabilities, isLoading: capsLoading } = useCapabilities(clientId)
   const [activeTab, setActiveTab] = useState('executive')
   const [syncing, setSyncing] = useState(false)
+  const qc = useQueryClient()
 
-  // Fetch client info with React Query
   const { data: client } = useQuery({
     queryKey: ['client', clientId],
     queryFn: () => clientsApi.getById(clientId),
@@ -39,10 +38,28 @@ export default function ClientDashboardPage() {
   })
 
   useEffect(() => {
-    if (!authLoading && !user) router.push('/login')
-  }, [user, authLoading])
+    if (!authLoading && !user) {
+      router.push('/login')
+      return
+    }
+    // If a client user somehow lands on another client's dashboard, redirect to their own
+    if (!authLoading && user) {
+      if (
+        (user.role === 'CLIENT_ADMIN' || user.role === 'CLIENT_MEMBER') &&
+        user.clientId &&
+        user.clientId !== clientId
+      ) {
+        router.push(`/admin/clients/${user.clientId}`)
+      }
+    }
+  }, [user, authLoading, clientId])
 
-  // Build dynamic tabs based on capabilities
+  // true = agency/super admin — shows admin nav + back button + sync
+  // false = client user — shows only dashboard tabs, no admin links
+  const isAgencyUser = !authLoading && user
+    ? (user.role !== 'CLIENT_ADMIN' && user.role !== 'CLIENT_MEMBER')
+    : false
+
   const tabs = useMemo(() => {
     if (!capabilities) return []
     const list = [
@@ -65,12 +82,26 @@ export default function ClientDashboardPage() {
     return list
   }, [capabilities])
 
-  const isAgencyUser = user?.role !== 'CLIENT_ADMIN' && user?.role !== 'CLIENT_MEMBER'
-
   const handleSync = async () => {
     setSyncing(true)
-    try { await syncApi.trigger(clientId) } catch {}
-    setTimeout(() => setSyncing(false), 2000)
+    try {
+      await syncApi.trigger(clientId)
+      let attempts = 0
+      const poll = setInterval(async () => {
+        attempts++
+        await qc.invalidateQueries({ queryKey: ['google-ads'] })
+        await qc.invalidateQueries({ queryKey: ['meta-ads'] })
+        await qc.invalidateQueries({ queryKey: ['executive'] })
+        await qc.invalidateQueries({ queryKey: ['website'] })
+        await qc.invalidateQueries({ queryKey: ['sync-logs', clientId] })
+        if (attempts >= 15) {
+          clearInterval(poll)
+          setSyncing(false)
+        }
+      }, 2000)
+    } catch {
+      setSyncing(false)
+    }
   }
 
   const renderTab = () => {
@@ -93,10 +124,17 @@ export default function ClientDashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar clientId={clientId} clientName={client?.name} tabs={tabs.map(t => ({ ...t, href: '#' }))} isAdmin={isAgencyUser} />
+      <Sidebar
+        clientId={clientId}
+        clientName={client?.name}
+        tabs={tabs.map(t => ({ ...t, href: '#' }))}
+        isAdmin={isAgencyUser}
+        activeTab={activeTab}
+        onTabClick={setActiveTab}
+      />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        {/* Back link for agency users */}
+        {/* Back link — only for agency users */}
         {isAgencyUser && (
           <div className="bg-white border-b border-slate-100 px-6 py-2">
             <Link href="/admin" className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-brand-600 transition-colors">
@@ -115,55 +153,8 @@ export default function ClientDashboardPage() {
           syncing={syncing}
         />
 
-        {/* Sync banner — shows last sync time or running status */}
-        <SyncBanner clientId={clientId} />
+        <SyncBanner clientId={clientId} showStatus={isAgencyUser} />
 
-        {/* Tab bar with date presets */}
-        <div className="bg-white border-b border-slate-100">
-          <div className="px-6 flex items-center justify-between flex-wrap gap-2 py-1">
-            {/* Tabs */}
-            <div className="flex gap-0 overflow-x-auto">
-              {tabs.map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`
-                    flex items-center gap-1.5 px-4 py-3.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors
-                    ${activeTab === tab.key
-                      ? 'border-brand-600 text-brand-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-                    }
-                  `}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Date presets */}
-            <div className="flex gap-1.5 flex-wrap py-1">
-              {DATE_PRESETS.map(preset => {
-                const isActive = dateRange.startDate === preset.range.startDate && dateRange.endDate === preset.range.endDate
-                return (
-                  <button
-                    key={preset.label}
-                    onClick={() => setDateRange(preset.range)}
-                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                      isActive
-                        ? 'bg-brand-50 border-brand-200 text-brand-700 font-medium'
-                        : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Tab content */}
         <div className="flex-1 p-6 overflow-auto">
           {renderTab()}
         </div>
