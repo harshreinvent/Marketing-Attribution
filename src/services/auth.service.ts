@@ -1,61 +1,125 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
-import { prisma } from "@repo/db";
-import { redis } from "@repo/config";
-import { env } from "@repo/config";
-import { UserRole } from "@repo/types";
-import type { Session } from "@repo/types";
-import { AuthError } from "../error/errors";
+import db from '../config/db'
+import { hashPassword, verifyPassword } from '../helpers/hash'
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../helpers/jwt'
+import { AppError } from '../helpers/AppError'
+import { RegisterDto, LoginDto } from '../validators/auth.validator'
 
-// Supabase public keys — fetched once at startup, jose caches them automatically.
-// No HTTP call is made on subsequent verifications.
-const JWKS = createRemoteJWKSet(
-  new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`)
-);
+const refreshTokenExpiry = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 7)
+  return d
+}
 
-export const authService = {
-  async verifyJWT(token: string): Promise<Session> {
-    // Step 1: Verify signature locally using Supabase's public key.
-    // Checks ES256 signature + expiry. No HTTP call to Supabase.
-    let payload: Awaited<ReturnType<typeof jwtVerify>>["payload"];
-    try {
-      const result = await jwtVerify(token, JWKS);
-      payload = result.payload;
-    } catch {
-      throw new AuthError("Invalid or expired token");
-    }
+export const registerUser = async (dto: RegisterDto) => {
+  const existing = await db.user.findUnique({ where: { email: dto.email } })
+  if (existing) throw new AppError('Email already registered', 409)
 
-    const supabaseId = payload.sub;
-    const sessionId = payload["session_id"] as string | undefined;
+  const hashed = await hashPassword(dto.password)
 
-    if (!supabaseId) throw new AuthError("Invalid token");
+  const user = await db.user.create({
+    data: {
+      email:     dto.email,
+      password:  hashed,
+      firstName: dto.firstName,
+      lastName:  dto.lastName,
+      role:      (dto.role as any) || 'AGENCY_MEMBER',
+      agencyId:  dto.agencyId,
+      clientId:  dto.clientId,
+    },
+    select: {
+      id: true, email: true, firstName: true, lastName: true,
+      role: true, agencyId: true, clientId: true,
+    },
+  })
 
-    // Step 2: Check Redis banned list (tokens invalidated by logout).
-    // If Redis is down, fail open — a logged-out token is at worst valid
-    // for its remaining lifetime (max 1 hour).
-    if (sessionId) {
-      try {
-        const revoked = await redis.get(`revoked:${sessionId}`);
-        if (revoked) throw new AuthError("Token has been revoked");
-      } catch (e) {
-        if (e instanceof AuthError) throw e;
-        console.warn("[auth] Redis unavailable — skipping revocation check");
-      }
-    }
+  return user
+}
 
-    // Step 3: Read role, clientId, locationIds from DB.
-    // The JWT only proves identity. The database determines what the user can do.
-    const user = await prisma.user.findUnique({
-      where: { supabase_id: supabaseId },
-      include: { user_location_access: true },
-    });
+export const loginUser = async (dto: LoginDto) => {
+  const user = await db.user.findUnique({ where: { email: dto.email } })
+  if (!user || !user.isActive) throw new AppError('Invalid email or password', 401)
 
-    if (!user) throw new AuthError("User not found");
+  const valid = await verifyPassword(dto.password, user.password)
+  if (!valid) throw new AppError('Invalid email or password', 401)
 
-    return {
-      userId: supabaseId,
-      clientId: user.client_id,
-      role: user.role as unknown as UserRole,
-      locationIds: user.user_location_access.map((a) => a.location_id),
-    };
-  },
-};
+  await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+
+  const payload = {
+    userId:   user.id,
+    email:    user.email,
+    role:     user.role,
+    agencyId: user.agencyId ?? undefined,
+    clientId: user.clientId ?? undefined,
+  }
+
+  const accessToken  = signAccessToken(payload)
+  const refreshToken = signRefreshToken(user.id)
+
+  await db.refreshToken.create({
+    data: { token: refreshToken, userId: user.id, expiresAt: refreshTokenExpiry() },
+  })
+
+  return {
+    accessToken,
+    refreshToken,
+    user: {
+      id:        user.id,
+      email:     user.email,
+      firstName: user.firstName,
+      lastName:  user.lastName,
+      role:      user.role,
+      agencyId:  user.agencyId ?? undefined,
+      clientId:  user.clientId ?? undefined,
+    },
+  }
+}
+
+export const refreshTokens = async (token: string) => {
+  const payload = verifyRefreshToken(token)
+
+  const stored = await db.refreshToken.findUnique({ where: { token } })
+  if (!stored || stored.expiresAt < new Date()) {
+    throw new AppError('Invalid or expired refresh token', 401)
+  }
+
+  const user = await db.user.findUnique({ where: { id: payload.userId } })
+  if (!user || !user.isActive) throw new AppError('User not found', 401)
+
+  // Token rotation — invalidate old, issue new
+  await db.refreshToken.delete({ where: { id: stored.id } })
+
+  const newAccessToken  = signAccessToken({
+    userId: user.id, email: user.email, role: user.role,
+    agencyId: user.agencyId ?? undefined, clientId: user.clientId ?? undefined,
+  })
+  const newRefreshToken = signRefreshToken(user.id)
+
+  await db.refreshToken.create({
+    data: { token: newRefreshToken, userId: user.id, expiresAt: refreshTokenExpiry() },
+  })
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken }
+}
+
+export const logoutUser = async (token: string) => {
+  await db.refreshToken.deleteMany({ where: { token } })
+}
+
+export const logoutAllDevices = async (userId: string) => {
+  await db.refreshToken.deleteMany({ where: { userId } })
+}
+
+export const getMe = async (userId: string) => {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true, email: true, firstName: true, lastName: true,
+      role: true, lastLoginAt: true,
+      agency: { select: { id: true, name: true, slug: true } },
+      client: { select: { id: true, name: true, slug: true } },
+    },
+  })
+
+  if (!user) throw new AppError('User not found', 404)
+  return user
+}
