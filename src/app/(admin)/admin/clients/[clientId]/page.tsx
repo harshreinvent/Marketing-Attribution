@@ -16,7 +16,8 @@ import { GoogleAdsTab } from '@/components/dashboard/GoogleAdsTab'
 import { MetaAdsTab } from '@/components/dashboard/MetaAdsTab'
 import { WebsiteTab } from '@/components/dashboard/WebsiteTab'
 import { FunnelRoiTab } from '@/components/dashboard/FunnelRoiTab'
-import { LayoutDashboard, BarChart3, Target, Globe, TrendingUp, ArrowLeft } from 'lucide-react'
+import { GbpTab } from '@/components/dashboard/GbpTab'
+import { LayoutDashboard, BarChart3, Target, Globe, TrendingUp, ArrowLeft, MapPin } from 'lucide-react'
 
 export default function ClientDashboardPage() {
   useAuthInit()
@@ -78,6 +79,8 @@ export default function ClientDashboardPage() {
         list.push({ key: 'website', label: 'Website / Organic', icon: <Globe size={15} /> })
       }
     }
+    if (capabilities.hasGmb)
+      list.push({ key: 'gbp', label: 'GBP Performance', icon: <MapPin size={15} /> })
     list.push({ key: 'funnel-roi', label: 'Funnel & ROI', icon: <TrendingUp size={15} /> })
     return list
   }, [capabilities])
@@ -93,6 +96,7 @@ export default function ClientDashboardPage() {
         await qc.invalidateQueries({ queryKey: ['meta-ads'] })
         await qc.invalidateQueries({ queryKey: ['executive'] })
         await qc.invalidateQueries({ queryKey: ['website'] })
+        await qc.invalidateQueries({ queryKey: ['gbp'] })
         await qc.invalidateQueries({ queryKey: ['sync-logs', clientId] })
         if (attempts >= 15) {
           clearInterval(poll)
@@ -110,6 +114,7 @@ export default function ClientDashboardPage() {
     if (activeTab === 'meta-ads')   return <MetaAdsTab clientId={clientId} dateRange={dateRange} />
     if (activeTab === 'funnel-roi') return <FunnelRoiTab clientId={clientId} dateRange={dateRange} />
     if (activeTab === 'website')    return <WebsiteTab clientId={clientId} dateRange={dateRange} />
+    if (activeTab === 'gbp')        return <GbpTab clientId={clientId} dateRange={dateRange} />
     if (activeTab.startsWith('website-')) {
       const locationId = activeTab.replace('website-', '')
       const location = capabilities?.locations.find(l => l.id === locationId)

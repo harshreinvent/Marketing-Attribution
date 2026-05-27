@@ -17,13 +17,17 @@ export const formatNumber = (value: number) => {
   return value.toLocaleString('en-IN')
 }
 
+// Always show exact number with commas — no K/L/Cr abbreviation
+export const formatExact = (value: number) =>
+  value.toLocaleString('en-IN')
+
 export const formatPercent = (value: number, decimals = 1) =>
   `${Number(value).toFixed(decimals)}%`
 
 export const getDefaultDateRange = () => {
   const end = new Date()
   const start = new Date()
-  start.setDate(start.getDate() - 30)
+  start.setDate(start.getDate() - 90)
   return {
     startDate: start.toISOString().split('T')[0],
     endDate: end.toISOString().split('T')[0],

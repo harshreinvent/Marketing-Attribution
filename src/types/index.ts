@@ -171,6 +171,40 @@ export interface FunnelRoiSummary {
   roiBlend: { source: string; pipelineLeads: number; totalContacts: number }[]
 }
 
+export interface GbpSummary {
+  hasIntegration: boolean
+  callClicks: number
+  websiteClicks: number
+  directionRequests: number
+  totalProfileViews: number
+  callCtr: number
+  websiteCtr: number
+  totalEngagement: number
+  locations: {
+    name: string
+    callClicks: number
+    websiteClicks: number
+    directionRequests: number
+    profileViews: number
+    callCtr: number
+    websiteCtr: number
+    totalEngagement: number
+  }[]
+  dailyTrend: {
+    date: string
+    calls: number
+    directions: number
+    websiteClicks: number
+  }[]
+  impressionBreakdown: {
+    location: string
+    desktopMaps: number
+    desktopSearch: number
+    mobileMaps: number
+    mobileSearch: number
+  }[]
+}
+
 // ─── API Response ────────────────────────────────────────────────────
 
 export interface ApiResponse<T> {

@@ -2,7 +2,7 @@ import { api } from './api'
 import type {
   AuthTokens, Client, ClientCapabilities, Location,
   ExecutiveSummary, GoogleAdsSummary, MetaAdsSummary,
-  WebsiteSummary, FunnelRoiSummary, ApiResponse
+  WebsiteSummary, FunnelRoiSummary, GbpSummary, ApiResponse
 } from '@/types'
 
 // ─── Auth ────────────────────────────────────────────────────────────
@@ -145,6 +145,14 @@ export const dashboardApi = {
   funnelRoi: async (clientId: string, startDate: string, endDate: string): Promise<FunnelRoiSummary> => {
     const { data } = await api.get<ApiResponse<FunnelRoiSummary>>(
       `/clients/${clientId}/dashboard/funnel-roi`,
+      { params: dateParams(startDate, endDate) }
+    )
+    return data.data
+  },
+
+  gbp: async (clientId: string, startDate: string, endDate: string): Promise<GbpSummary> => {
+    const { data } = await api.get<ApiResponse<GbpSummary>>(
+      `/clients/${clientId}/dashboard/gbp`,
       { params: dateParams(startDate, endDate) }
     )
     return data.data

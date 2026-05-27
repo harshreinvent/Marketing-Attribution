@@ -14,6 +14,7 @@ export const QUERY_KEYS = {
   metaAds:       (clientId: string, dr: DateRange) => ['meta-ads', clientId, dr.startDate, dr.endDate],
   website:       (clientId: string, dr: DateRange, locationId?: string) => ['website', clientId, dr.startDate, dr.endDate, locationId],
   funnelRoi:     (clientId: string, dr: DateRange) => ['funnel-roi', clientId, dr.startDate, dr.endDate],
+  gbp:           (clientId: string, dr: DateRange) => ['gbp', clientId, dr.startDate, dr.endDate],
   clients:       () => ['clients'],
   syncLogs:      (clientId: string) => ['sync-logs', clientId],
 }
@@ -65,6 +66,15 @@ export const useFunnelRoi = (clientId: string, dateRange: DateRange) =>
     queryKey: QUERY_KEYS.funnelRoi(clientId, dateRange),
     queryFn: () => dashboardApi.funnelRoi(clientId, dateRange.startDate, dateRange.endDate),
     enabled: !!clientId,
+  })
+
+export const useGbp = (clientId: string, dateRange: DateRange) =>
+  useQuery({
+    queryKey: QUERY_KEYS.gbp(clientId, dateRange),
+    queryFn: () => dashboardApi.gbp(clientId, dateRange.startDate, dateRange.endDate),
+    enabled: !!clientId && !!dateRange.startDate && !!dateRange.endDate,
+    staleTime: 0,
+    refetchOnMount: true,
   })
 
 // ─── Clients list ─────────────────────────────────────────────────────
