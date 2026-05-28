@@ -130,6 +130,41 @@ export interface GoogleAdsSummary {
     cpa: number | null
     roas: number
   }[]
+  adGroups: {
+    adGroupName: string
+    campaignName: string
+    spend: number
+    impressions: number
+    clicks: number
+    conversions: number
+    ctr: number
+    cpc: number | null
+    cpa: number | null
+  }[]
+  dailyTrend: {
+    date: string
+    spend: number
+    impressions: number
+    clicks: number
+    conversions: number
+  }[]
+  deviceBreakdown: {
+    device: string
+    spend: number
+    impressions: number
+    clicks: number
+    conversions: number
+    ctr: number
+    cpc: number | null
+  }[]
+  hourlyHeatmap: {
+    hour: number
+    label: string
+    clicks: number
+    impressions: number
+    spend: number
+    conversions: number
+  }[]
 }
 
 export interface MetaAdsSummary {
