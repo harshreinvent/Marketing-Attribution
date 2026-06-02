@@ -5,6 +5,8 @@ import {
   fetchChannelMetrics,
   fetchLandingPageMetrics,
   fetchEventMetrics,
+  fetchLeadEventsByChannel,
+  fetchLeadEventsByLandingPage,
 } from '../ga4.service'
 
 export const syncGA4 = async (
@@ -42,13 +44,15 @@ export const syncGA4 = async (
         where: { clientId_propertyId_date: { clientId, propertyId, date: row.date } },
         create: { clientId, propertyId, ...row },
         update: {
-          sessions:        row.sessions,
-          activeUsers:     row.activeUsers,
-          newUsers:        row.newUsers,
-          engagedSessions: row.engagedSessions,
-          engagementRate:  row.engagementRate,
-          eventCount:      row.eventCount,
-          keyEvents:       row.keyEvents,
+          sessions:            row.sessions,
+          activeUsers:         row.activeUsers,
+          newUsers:            row.newUsers,
+          engagedSessions:     row.engagedSessions,
+          engagementRate:      row.engagementRate,
+          eventCount:          row.eventCount,
+          keyEvents:           row.keyEvents,
+          sessionKeyEventRate: row.sessionKeyEventRate,
+          avgSessionDuration:  row.avgSessionDuration,
         },
       })
       totalRows++
@@ -67,13 +71,14 @@ export const syncGA4 = async (
         },
         create: { clientId, propertyId, ...row },
         update: {
-          sessions:        row.sessions,
-          activeUsers:     row.activeUsers,
-          newUsers:        row.newUsers,
-          engagedSessions: row.engagedSessions,
-          engagementRate:  row.engagementRate,
-          eventCount:      row.eventCount,
-          keyEvents:       row.keyEvents,
+          sessions:            row.sessions,
+          activeUsers:         row.activeUsers,
+          newUsers:            row.newUsers,
+          engagedSessions:     row.engagedSessions,
+          engagementRate:      row.engagementRate,
+          eventCount:          row.eventCount,
+          keyEvents:           row.keyEvents,
+          sessionKeyEventRate: row.sessionKeyEventRate,
         },
       })
       totalRows++
@@ -104,6 +109,39 @@ export const syncGA4 = async (
         where: { clientId_propertyId_date_eventName: { clientId, propertyId, date: row.date, eventName: row.eventName } },
         create: { clientId, propertyId, ...row },
         update: { eventCount: row.eventCount, activeUsers: row.activeUsers, keyEvents: row.keyEvents },
+      })
+      totalRows++
+    }
+
+    // ── 5. Lead events by channel ─────────────────────────────────────────────
+    const leadChannelRows = await fetchLeadEventsByChannel(propertyId, dateRange.startDate, dateRange.endDate)
+    for (const row of leadChannelRows) {
+      await db.ga4LeadEventMetrics.upsert({
+        where: {
+          clientId_propertyId_date_eventName_channelGroup_source_medium: {
+            clientId, propertyId, date: row.date,
+            eventName: row.eventName, channelGroup: row.channelGroup,
+            source: row.source, medium: row.medium,
+          },
+        },
+        create: { clientId, propertyId, ...row },
+        update: { eventCount: row.eventCount, activeUsers: row.activeUsers },
+      })
+      totalRows++
+    }
+
+    // ── 6. Lead events by landing page ────────────────────────────────────────
+    const leadPageRows = await fetchLeadEventsByLandingPage(propertyId, dateRange.startDate, dateRange.endDate)
+    for (const row of leadPageRows) {
+      await db.ga4LandingPageLeadEvents.upsert({
+        where: {
+          clientId_propertyId_date_landingPage_eventName: {
+            clientId, propertyId, date: row.date,
+            landingPage: row.landingPage, eventName: row.eventName,
+          },
+        },
+        create: { clientId, propertyId, ...row },
+        update: { eventCount: row.eventCount, activeUsers: row.activeUsers },
       })
       totalRows++
     }
